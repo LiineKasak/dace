@@ -239,7 +239,7 @@ required:
                 required:
                     executable:
                         type: str
-                        default: ''
+                        default: '/opt/homebrew/bin/g++-12'
                         title: Compiler executable override
                         description: File path or name of compiler executable
 
