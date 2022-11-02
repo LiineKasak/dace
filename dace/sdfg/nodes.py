@@ -798,7 +798,7 @@ class Map(object):
     label = Property(dtype=str, desc="Label of the map")
     params = ListProperty(element_type=str, desc="Mapped parameters")
     range = RangeProperty(desc="Ranges of map parameters", default=sbs.Range([]))
-    tasking = Property(dtype=bool, desc="Use tasking instead of parallel for", default=False)
+    tasking = Property(dtype=bool, desc="Use tasking instead of parallel for", default=True)
     schedule = EnumProperty(dtype=dtypes.ScheduleType, desc="Map schedule", default=dtypes.ScheduleType.Default)
     unroll = Property(dtype=bool, desc="Map unrolling")
     collapse = Property(dtype=int, default=1, desc="How many dimensions to collapse into the parallel range")
