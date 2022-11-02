@@ -1678,6 +1678,7 @@ class CPUCodeGen(TargetCodeGenerator):
         function_stream,
         callsite_stream,
     ):
+        tasking = False
         state_dfg = sdfg.node(state_id)
         map_params = node.map.params
         map_name = "__DACEMAP_" + str(state_id) + "_" + str(dfg.node_id(node))
@@ -1707,25 +1708,29 @@ class CPUCodeGen(TargetCodeGenerator):
         # TODO: Refactor to generate_scope_preamble once a general code
         #  generator (that CPU inherits from) is implemented
         if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
-            map_header += "#pragma omp parallel"
-            if node.map.omp_schedule != dtypes.OMPScheduleType.Default:
-                schedule = " schedule("
-                if node.map.omp_schedule == dtypes.OMPScheduleType.Static:
-                    schedule += "static"
-                elif node.map.omp_schedule == dtypes.OMPScheduleType.Dynamic:
-                    schedule += "dynamic"
-                elif node.map.omp_schedule == dtypes.OMPScheduleType.Guided:
-                    schedule += "guided"
-                else:
-                    raise ValueError("Unknown OpenMP schedule type")
-                if node.map.omp_chunk_size > 0:
-                    schedule += f", {node.map.omp_chunk_size}"
-                schedule += ")"
-                map_header += schedule
+            if tasking:
+                map_header += "#pragma omp parallel"
+            else:
+                map_header += "#pragma omp parallel for"
+                if node.map.omp_schedule != dtypes.OMPScheduleType.Default:
+                    schedule = " schedule("
+                    if node.map.omp_schedule == dtypes.OMPScheduleType.Static:
+                        schedule += "static"
+                    elif node.map.omp_schedule == dtypes.OMPScheduleType.Dynamic:
+                        schedule += "dynamic"
+                    elif node.map.omp_schedule == dtypes.OMPScheduleType.Guided:
+                        schedule += "guided"
+                    else:
+                        raise ValueError("Unknown OpenMP schedule type")
+                    if node.map.omp_chunk_size > 0:
+                        schedule += f", {node.map.omp_chunk_size}"
+                    schedule += ")"
+                    map_header += schedule
+                if node.map.collapse > 1:
+                    map_header += ' collapse(%d)' % node.map.collapse
+
             if node.map.omp_num_threads > 0:
                 map_header += f" num_threads({node.map.omp_num_threads})"
-            if node.map.collapse > 1:
-                map_header += ' collapse(%d)' % node.map.collapse + "{"
             # Loop over outputs, add OpenMP reduction clauses to detected cases
             # TODO: set up register outside loop
             # exit_node = dfg.exit_node(node)
@@ -1740,7 +1745,11 @@ class CPUCodeGen(TargetCodeGenerator):
             #                var=outedge.src_conn))
             #            reduced_variables.append(outedge)
 
-            map_header += " %s\n" % ", ".join(reduction_stmts) + "{\n#pragma omp single\n{"
+            map_header += " %s\n" % ", ".join(reduction_stmts)
+            if tasking:
+                map_header += "{\n#pragma omp single\n{\n#pragma omp taskloop"
+                if node.map.collapse > 1:
+                    map_header += ' collapse(%d)' % node.map.collapse
 
         # TODO: Explicit map unroller
         if node.map.unroll:
@@ -1759,10 +1768,9 @@ class CPUCodeGen(TargetCodeGenerator):
             if node.map.unroll:
                 result.write("#pragma unroll", sdfg, state_id, node)
 
-            task_pragma = "\n#pragma omp task\n{" if i == 0 else ""
             result.write(
-                "for (auto %s = %s; %s < %s; %s += %s) {%s" %
-                (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip), task_pragma),
+                "for (auto %s = %s; %s < %s; %s += %s) {" %
+                (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip)),
                 sdfg,
                 state_id,
                 node,
@@ -1774,6 +1782,7 @@ class CPUCodeGen(TargetCodeGenerator):
         self._frame.allocate_arrays_in_scope(sdfg, node, function_stream, result)
 
     def _generate_MapExit(self, sdfg, dfg, state_id, node, function_stream, callsite_stream):
+        tasking = False
         result = callsite_stream
 
         # Obtain start of map
@@ -1798,10 +1807,9 @@ class CPUCodeGen(TargetCodeGenerator):
 
         for _ in map_node.map.range:
             result.write("}", sdfg, state_id, node)
-        result.write("}", sdfg, state_id, node)
 
-        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
-            result.write("}\n}", sdfg, state_id, node)
+        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore and tasking:
+            result.write("\n}\n}", sdfg, state_id, node)
 
         result.write(outer_stream.getvalue())
 
