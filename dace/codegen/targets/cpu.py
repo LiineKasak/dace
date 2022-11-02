@@ -1783,6 +1783,8 @@ class CPUCodeGen(TargetCodeGenerator):
         if node.map.unroll:
             if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
                 raise ValueError("A Multicore CPU map cannot be unrolled (" + node.map.label + ")")
+        
+        # constsize = all([not symbolic.issymbolic(v, sdfg.constants) for r in node.map.range for v in r])
 
         
         for i, r in enumerate(node.map.range):
@@ -1794,7 +1796,7 @@ class CPUCodeGen(TargetCodeGenerator):
                 result.write("#pragma unroll", sdfg, state_id, node)
 
             result.write(
-                "for (auto %s = %s; %s < %s; %s += %s) {" %
+                "for (auto %s = %s; %s < %s; %s += %s) {\n" %
                 (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip)),
                 sdfg,
                 state_id,
