@@ -1747,7 +1747,7 @@ class CPUCodeGen(TargetCodeGenerator):
             #            reduced_variables.append(outedge)
 
             if Config.get_bool('tasking'):
-                map_header += " %s\n" % ", ".join(reduction_stmts) + "{\n#pragma omp single\n{"
+                map_header += " %s\n" % ", ".join(reduction_stmts) + "{\n#pragma omp single\n{\n#pragma omp taskloop"
             else:
                 map_header += " %s\n" % ", ".join(reduction_stmts)
 
@@ -1769,13 +1769,9 @@ class CPUCodeGen(TargetCodeGenerator):
             if node.map.unroll:
                 result.write("#pragma unroll", sdfg, state_id, node)
 
-            if Config.get_bool('tasking'):
-                task_pragma = "\n#pragma omp task\n{" if i == 0 else ""
-            else:
-                task_pragma = "\n"
             result.write(
-                "for (auto %s = %s; %s < %s; %s += %s) {%s" %
-                (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip), task_pragma),
+                "for (auto %s = %s; %s < %s; %s += %s) {\n" %
+                (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip)),
                 sdfg,
                 state_id,
                 node,
@@ -1813,7 +1809,7 @@ class CPUCodeGen(TargetCodeGenerator):
             result.write("}", sdfg, state_id, node)
 
         if Config.get_bool('tasking'):
-            result.write("}", sdfg, state_id, node)
+            result.write("", sdfg, state_id, node)
 
             if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
                 result.write("}\n}", sdfg, state_id, node)
