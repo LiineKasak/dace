@@ -1687,7 +1687,6 @@ class CPUCodeGen(TargetCodeGenerator):
             if node.map.collapse > 1:
                     map_header += ' collapse(%d)' % node.map.collapse
 
-        # Nested loops
         callsite_stream.write(map_header, sdfg, state_id, node)
     
     def _generate_parallel_for_MapHeader(
@@ -1737,7 +1736,6 @@ class CPUCodeGen(TargetCodeGenerator):
 
         map_header += " %s\n" % ", ".join(reduction_stmts)
 
-        # Nested loops
         callsite_stream.write(map_header, sdfg, state_id, node)
     
 
@@ -1752,6 +1750,7 @@ class CPUCodeGen(TargetCodeGenerator):
     ):
         state_dfg = sdfg.node(state_id)
         map_params = node.map.params
+        # map_name = "__DACEMAP_" + str(state_id) + "_" + str(dfg.node_id(node))
 
         result = callsite_stream
 
@@ -1786,7 +1785,7 @@ class CPUCodeGen(TargetCodeGenerator):
         
         # constsize = all([not symbolic.issymbolic(v, sdfg.constants) for r in node.map.range for v in r])
 
-        
+        # Nested loops
         for i, r in enumerate(node.map.range):
             # var = '__DACEMAP_%s_%d' % (node.map.label, i)
             var = map_params[i]
