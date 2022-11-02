@@ -1776,7 +1776,7 @@ class CPUCodeGen(TargetCodeGenerator):
         if node.map.tasking:
             self._generate_tasking_MapHeader(sdfg, state_id, node, callsite_stream)
         else:
-            self._generate_parallel_MapHeader(sdfg, state_id, node, callsite_stream)
+            self._generate_parallel_for_MapHeader(sdfg, state_id, node, callsite_stream)
         
         # TODO: Explicit map unroller
         if node.map.unroll:
