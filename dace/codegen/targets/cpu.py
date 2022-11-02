@@ -1690,7 +1690,7 @@ class CPUCodeGen(TargetCodeGenerator):
         # Nested loops
         callsite_stream.write(map_header, sdfg, state_id, node)
     
-    def _generate_parallel_MapHeader(
+    def _generate_parallel_for_MapHeader(
         self,
         sdfg,
         state_id,
