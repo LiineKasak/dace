@@ -1668,6 +1668,78 @@ class CPUCodeGen(TargetCodeGenerator):
             function_stream.write(nested_stream.getvalue())
 
         self._dispatcher.defined_vars.exit_scope(sdfg)
+    
+    def _generate_tasking_MapHeader(
+        self,
+        sdfg,
+        state_id,
+        node: nodes.MapEntry,
+        callsite_stream,
+    ):
+        map_header = ""
+
+        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
+            map_header += "#pragma omp parallel\n{\n"
+            if node.map.omp_num_threads > 0:
+                map_header += f" num_threads({node.map.omp_num_threads})"
+            map_header += "#pragma omp single\n{\n"
+            map_header += "#pragma omp taskloop"
+            if node.map.collapse > 1:
+                    map_header += ' collapse(%d)' % node.map.collapse
+
+        # Nested loops
+        callsite_stream.write(map_header, sdfg, state_id, node)
+    
+    def _generate_parallel_MapHeader(
+        self,
+        sdfg,
+        state_id,
+        node: nodes.MapEntry,
+        callsite_stream,
+    ):
+        map_header = ""
+        # TODO: Refactor to generate_scope_preamble once a general code
+        #  generator (that CPU inherits from) is implemented
+        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
+            map_header += "#pragma omp parallel for"
+            if node.map.omp_schedule != dtypes.OMPScheduleType.Default:
+                schedule = " schedule("
+                if node.map.omp_schedule == dtypes.OMPScheduleType.Static:
+                    schedule += "static"
+                elif node.map.omp_schedule == dtypes.OMPScheduleType.Dynamic:
+                    schedule += "dynamic"
+                elif node.map.omp_schedule == dtypes.OMPScheduleType.Guided:
+                    schedule += "guided"
+                else:
+                    raise ValueError("Unknown OpenMP schedule type")
+                if node.map.omp_chunk_size > 0:
+                    schedule += f", {node.map.omp_chunk_size}"
+                schedule += ")"
+                map_header += schedule
+        if node.map.omp_num_threads > 0:
+            map_header += f" num_threads({node.map.omp_num_threads})"
+        if node.map.collapse > 1:
+            map_header += ' collapse(%d)' % node.map.collapse
+
+        # Loop over outputs, add OpenMP reduction clauses to detected cases
+        # TODO: set up register outside loop
+        # exit_node = dfg.exit_node(node)
+        reduction_stmts = []
+        # for outedge in dfg.in_edges(exit_node):
+        #    if (isinstance(outedge.src, nodes.CodeNode)
+        #            and outedge.data.wcr is not None):
+        #        redt = operations.detect_reduction_type(outedge.data.wcr)
+        #        if redt != dtypes.ReductionType.Custom:
+        #            reduction_stmts.append('reduction({typ}:{var})'.format(
+        #                typ=_REDUCTION_TYPE_TO_OPENMP[redt],
+        #                var=outedge.src_conn))
+        #            reduced_variables.append(outedge)
+
+        map_header += " %s\n" % ", ".join(reduction_stmts)
+
+        # Nested loops
+        callsite_stream.write(map_header, sdfg, state_id, node)
+    
 
     def _generate_MapEntry(
         self,
@@ -1678,13 +1750,10 @@ class CPUCodeGen(TargetCodeGenerator):
         function_stream,
         callsite_stream,
     ):
-        tasking = False
         state_dfg = sdfg.node(state_id)
         map_params = node.map.params
-        map_name = "__DACEMAP_" + str(state_id) + "_" + str(dfg.node_id(node))
 
         result = callsite_stream
-        map_header = ""
 
         # Encapsulate map with a C scope
         # TODO: Refactor out of MapEntry generation (generate_scope_header?)
@@ -1705,61 +1774,17 @@ class CPUCodeGen(TargetCodeGenerator):
         if instr is not None:
             instr.on_scope_entry(sdfg, state_dfg, node, callsite_stream, inner_stream, function_stream)
 
-        # TODO: Refactor to generate_scope_preamble once a general code
-        #  generator (that CPU inherits from) is implemented
-        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
-            if tasking:
-                map_header += "#pragma omp parallel"
-            else:
-                map_header += "#pragma omp parallel for"
-                if node.map.omp_schedule != dtypes.OMPScheduleType.Default:
-                    schedule = " schedule("
-                    if node.map.omp_schedule == dtypes.OMPScheduleType.Static:
-                        schedule += "static"
-                    elif node.map.omp_schedule == dtypes.OMPScheduleType.Dynamic:
-                        schedule += "dynamic"
-                    elif node.map.omp_schedule == dtypes.OMPScheduleType.Guided:
-                        schedule += "guided"
-                    else:
-                        raise ValueError("Unknown OpenMP schedule type")
-                    if node.map.omp_chunk_size > 0:
-                        schedule += f", {node.map.omp_chunk_size}"
-                    schedule += ")"
-                    map_header += schedule
-                if node.map.collapse > 1:
-                    map_header += ' collapse(%d)' % node.map.collapse
-
-            if node.map.omp_num_threads > 0:
-                map_header += f" num_threads({node.map.omp_num_threads})"
-            # Loop over outputs, add OpenMP reduction clauses to detected cases
-            # TODO: set up register outside loop
-            # exit_node = dfg.exit_node(node)
-            reduction_stmts = []
-            # for outedge in dfg.in_edges(exit_node):
-            #    if (isinstance(outedge.src, nodes.CodeNode)
-            #            and outedge.data.wcr is not None):
-            #        redt = operations.detect_reduction_type(outedge.data.wcr)
-            #        if redt != dtypes.ReductionType.Custom:
-            #            reduction_stmts.append('reduction({typ}:{var})'.format(
-            #                typ=_REDUCTION_TYPE_TO_OPENMP[redt],
-            #                var=outedge.src_conn))
-            #            reduced_variables.append(outedge)
-
-            map_header += " %s\n" % ", ".join(reduction_stmts)
-            if tasking:
-                map_header += "{\n#pragma omp single\n{\n#pragma omp taskloop"
-                if node.map.collapse > 1:
-                    map_header += ' collapse(%d)' % node.map.collapse
-
+        if node.map.tasking:
+            self._generate_tasking_MapHeader(sdfg, state_id, node, callsite_stream)
+        else:
+            self._generate_parallel_MapHeader(sdfg, state_id, node, callsite_stream)
+        
         # TODO: Explicit map unroller
         if node.map.unroll:
             if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
                 raise ValueError("A Multicore CPU map cannot be unrolled (" + node.map.label + ")")
 
-        constsize = all([not symbolic.issymbolic(v, sdfg.constants) for r in node.map.range for v in r])
-
-        # Nested loops
-        result.write(map_header, sdfg, state_id, node)
+        
         for i, r in enumerate(node.map.range):
             # var = '__DACEMAP_%s_%d' % (node.map.label, i)
             var = map_params[i]
@@ -1782,7 +1807,6 @@ class CPUCodeGen(TargetCodeGenerator):
         self._frame.allocate_arrays_in_scope(sdfg, node, function_stream, result)
 
     def _generate_MapExit(self, sdfg, dfg, state_id, node, function_stream, callsite_stream):
-        tasking = False
         result = callsite_stream
 
         # Obtain start of map
@@ -1808,7 +1832,7 @@ class CPUCodeGen(TargetCodeGenerator):
         for _ in map_node.map.range:
             result.write("}", sdfg, state_id, node)
 
-        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore and tasking:
+        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore and node.map.tasking:
             result.write("\n}\n}", sdfg, state_id, node)
 
         result.write(outer_stream.getvalue())

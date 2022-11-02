@@ -15,6 +15,12 @@ type: dict
 title: General
 description: DaCe Preferences
 required:
+    tasking:
+        type: bool
+        default: true
+        title: Use experimental tasking feature
+        description: >
+            Use OpenMP tasking for dace.map when generating the c++ code.
     #############################################
     # Categories
     optimizer:
