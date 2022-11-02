@@ -1707,7 +1707,10 @@ class CPUCodeGen(TargetCodeGenerator):
         # TODO: Refactor to generate_scope_preamble once a general code
         #  generator (that CPU inherits from) is implemented
         if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
-            map_header += "#pragma omp parallel"
+            if Config.get_bool('tasking'):
+                map_header += "#pragma omp parallel"
+            else:
+                map_header += "#pragma omp parallel for"
             if node.map.omp_schedule != dtypes.OMPScheduleType.Default:
                 schedule = " schedule("
                 if node.map.omp_schedule == dtypes.OMPScheduleType.Static:
@@ -1725,7 +1728,10 @@ class CPUCodeGen(TargetCodeGenerator):
             if node.map.omp_num_threads > 0:
                 map_header += f" num_threads({node.map.omp_num_threads})"
             if node.map.collapse > 1:
-                map_header += ' collapse(%d)' % node.map.collapse + "{"
+                if Config.get_bool('tasking'):
+                    map_header += ' collapse(%d)' % node.map.collapse + "{"
+                else:
+                    map_header += ' collapse(%d)' % node.map.collapse
             # Loop over outputs, add OpenMP reduction clauses to detected cases
             # TODO: set up register outside loop
             # exit_node = dfg.exit_node(node)
@@ -1740,7 +1746,11 @@ class CPUCodeGen(TargetCodeGenerator):
             #                var=outedge.src_conn))
             #            reduced_variables.append(outedge)
 
-            map_header += " %s\n" % ", ".join(reduction_stmts) + "{\n#pragma omp single\n{"
+            if Config.get_bool('tasking'):
+                map_header += " %s\n" % ", ".join(reduction_stmts) + "{\n#pragma omp single\n{"
+            else:
+                map_header += " %s\n" % ", ".join(reduction_stmts)
+
 
         # TODO: Explicit map unroller
         if node.map.unroll:
@@ -1759,7 +1769,10 @@ class CPUCodeGen(TargetCodeGenerator):
             if node.map.unroll:
                 result.write("#pragma unroll", sdfg, state_id, node)
 
-            task_pragma = "\n#pragma omp task\n{" if i == 0 else ""
+            if Config.get_bool('tasking'):
+                task_pragma = "\n#pragma omp task\n{" if i == 0 else ""
+            else:
+                task_pragma = "\n"
             result.write(
                 "for (auto %s = %s; %s < %s; %s += %s) {%s" %
                 (var, cpp.sym2cpp(begin), var, cpp.sym2cpp(end + 1), var, cpp.sym2cpp(skip), task_pragma),
@@ -1798,10 +1811,12 @@ class CPUCodeGen(TargetCodeGenerator):
 
         for _ in map_node.map.range:
             result.write("}", sdfg, state_id, node)
-        result.write("}", sdfg, state_id, node)
 
-        if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
-            result.write("}\n}", sdfg, state_id, node)
+        if Config.get_bool('tasking'):
+            result.write("}", sdfg, state_id, node)
+
+            if node.map.schedule == dtypes.ScheduleType.CPU_Multicore:
+                result.write("}\n}", sdfg, state_id, node)
 
         result.write(outer_stream.getvalue())
 
