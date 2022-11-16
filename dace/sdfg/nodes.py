@@ -800,6 +800,7 @@ class Map(object):
     range = RangeProperty(desc="Ranges of map parameters", default=sbs.Range([]))
     schedule = EnumProperty(dtype=dtypes.ScheduleType, desc="Map schedule", default=dtypes.ScheduleType.Default)
     unroll = Property(dtype=bool, desc="Map unrolling")
+    tasking = Property(dtype=bool, desc="Map tasking")
     collapse = Property(dtype=int, default=1, desc="How many dimensions to collapse into the parallel range")
     debuginfo = DebugInfoProperty()
     is_collapsed = Property(dtype=bool, desc="Show this node/scope/state as collapsed", default=False)
@@ -837,6 +838,7 @@ class Map(object):
                  ndrange,
                  schedule=dtypes.ScheduleType.Default,
                  unroll=False,
+                 tasking=False,
                  collapse=1,
                  fence_instrumentation=False,
                  debuginfo=None):
@@ -846,6 +848,7 @@ class Map(object):
         self.label = label
         self.schedule = schedule
         self.unroll = unroll
+        self.tasking = tasking
         self.collapse = 1
         self.params = params
         self.range = ndrange
